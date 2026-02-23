@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { inventory } from "@/lib/inventory";
 import { AISearchResponseSchema } from "@/lib/schema";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || "AIzaSyCbhgpHiOZs50MIKjA-sCPP7EgX3QopoeQ");
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || "");
 
 export async function POST(req: NextRequest) {
     try {
