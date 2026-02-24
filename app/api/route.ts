@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AISearchResponseSchema } from "@/lib/schema";
 import { inventory, TravelItem } from "@/lib/inventory";
 import { vectorStore } from "@/lib/vector-store";
+import { isRateLimited } from "@/lib/rate-limit";
 
 const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
@@ -14,6 +15,23 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 export async function POST(req: NextRequest) {
     try {
+        // --- Rate Limiting Step ---
+        // Robust IP detection for Vercel/proxies
+        const forwarded = req.headers.get("x-forwarded-for");
+        const ip = (req as any).ip ||
+            (forwarded ? forwarded.split(",")[0].trim() : null) ||
+            req.headers.get("x-real-ip") ||
+            "127.0.0.1";
+
+        const { limited, retryAfter } = isRateLimited(ip);
+
+        if (limited) {
+            return NextResponse.json(
+                { error: "Too many requests. Please try again later.", retryAfter },
+                { status: 429 }
+            );
+        }
+
         const { query } = await req.json();
 
         if (!query) {

@@ -40,3 +40,17 @@ I used **Antigravity (built on Gemini)** to help build this. One instance where 
 3. **Install Dependencies**: `npm install`
 4. **Run Locally**: `npm run dev`
 5. **Deploy**: Push to GitHub and connect to Vercel.
+
+
+
+
+graph TD
+    A[User Query] --> B[Frontend]
+    B --> C[API Route]
+    C --> D[Vector Store]
+    D --> E[Gemini Embedding API]
+    E --> D
+    D -->|Top 3 Matches| F[Gemini LLM]
+    F -->|Analysis & Reasoning| C
+    C --> B
+    B --> G[Display Results]
