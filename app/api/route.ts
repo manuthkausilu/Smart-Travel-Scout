@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { inventory } from "@/lib/inventory";
 import { AISearchResponseSchema } from "@/lib/schema";
+import { inventory, TravelItem } from "@/lib/inventory";
+import { vectorStore } from "@/lib/vector-store";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || "");
+const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+//check if apiKey is defined
+if (!apiKey) {
+    throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not defined in environment variables");
+}
+const genAI = new GoogleGenerativeAI(apiKey);
 
 export async function POST(req: NextRequest) {
     try {
@@ -13,6 +20,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Query is required" }, { status: 400 });
         }
 
+        // --- Hybrid Retrieval Step ---
+        // Retrieve top 3 candidates from the inventory using vector search
+        const candidates = await vectorStore.search(query, 3);
+
         const model = genAI.getGenerativeModel({
             model: "gemini-3-flash-preview",
             generationConfig: {
@@ -21,10 +32,10 @@ export async function POST(req: NextRequest) {
         });
 
         const systemPrompt = `
-      You are a Smart Travel Scout. Your task is to help users find the best-matching travel experiences from the provided inventory.
+      You are a Smart Travel Scout. Your task is to help users find the best-matching travel experiences from the provided candidates.
       
       STRICT RULES:
-      1. You must ONLY suggest items from the provided inventory below.
+      1. You must ONLY suggest items from the provided candidates below.
       2. If no items match, return an empty "matches" array and explain why in the "explanation" field.
       3. For each match, provide a brief reasoning why it matches the user's intent (tags, location, price).
       4. Do NOT hallucinate or suggest destinations outside the list.
@@ -34,25 +45,37 @@ export async function POST(req: NextRequest) {
            "explanation": string
          }
 
-      INVENTORY:
-      ${JSON.stringify(inventory, null, 2)}
+      CANDIDATES:
+      ${JSON.stringify(candidates, null, 2)}
     `;
 
         const prompt = `User request: "${query}"`;
 
+        console.log("--- GEMINI PAYLOAD ---");
+        console.log("System Prompt:", systemPrompt);
+        console.log("User Prompt:", prompt);
+        console.log("----------------------");
+
         const result = await model.generateContent([systemPrompt, prompt]);
-        const responseText = result.response.text();
+        let responseText = result.response.text();
+
+        // Clean up response text (remove markdown formatting if present)
+        responseText = responseText.replace(/```json\n?|```/g, "").trim();
+
+        console.log("--- GEMINI RESPONSE ---");
+        console.log(responseText);
+        console.log("------------------------");
 
         // Parse and validate with Zod
         const parsedData = JSON.parse(responseText);
         const validatedData = AISearchResponseSchema.parse(parsedData);
 
-        // Final Post-Processing Safety Check: Ensure IDs actually exist in inventory
-        const finalMatches = validatedData.matches.filter(match =>
-            inventory.some(item => item.id === match.id)
-        ).map(match => ({
+        // Final Post-Processing Safety Check: Ensure IDs actually exist in candidates (or full inventory)
+        const finalMatches = validatedData.matches.filter((match: any) =>
+            candidates.some((item: TravelItem) => item.id === match.id)
+        ).map((match: any) => ({
             ...match,
-            item: inventory.find(item => item.id === match.id)!
+            item: candidates.find((item: TravelItem) => item.id === match.id)!
         }));
 
         return NextResponse.json({
