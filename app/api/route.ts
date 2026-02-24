@@ -103,6 +103,21 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
         console.error("AI Search Error:", error);
+
+        // Special handling for Gemini API Rate Limits / Quota
+        const errorMessage = error.message || "";
+        const isQuotaExceeded =
+            error.status === 429 ||
+            errorMessage.includes("429") ||
+            errorMessage.toLowerCase().includes("quota");
+
+        if (isQuotaExceeded) {
+            return NextResponse.json(
+                { error: "The AI service is currently busy (quota exceeded). Please wait a moment and try again." },
+                { status: 429 }
+            );
+        }
+
         return NextResponse.json(
             { error: "Failed to process search request", details: error.message },
             { status: 500 }
